@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<robot name="kendama_ball">
+
+<material name="silver">
+  <color rgba="0.700 0.700 0.700 1.000"/>
+</material>
+
+<link name="base_link">
+  <inertial>
+    <origin rpy="0 0 0" xyz="-7.549920042196525e-06 -7.752046099251671e-13 0.14800935009670818"/>
+    <mass value="0.08210370012115252"/>
+    <inertia ixx="3.0125439904344926e-05" ixy="-1.1960360562673797e-20" ixz="1.9760749263850793e-18" iyy="3.012543990434384e-05" iyz="5.131617174158884e-18" izz="3.1647218958006576e-05"/>
+  </inertial>
+  <visual>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/base_link.stl" scale="0.0015 0.0015 0.0015"/>
+    </geometry>
+    <material name="silver"/>
+    <material/>
+  </visual>
+  <collision>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <geometry>
+      <mesh filename="meshes/base_link.stl" scale="0.0015 0.0015 0.0015"/>
+    </geometry>
+  </collision>
+</link>
+
+</robot>
