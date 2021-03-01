@@ -162,7 +162,7 @@ class KendamaEnv(gym.Env):
 
     # add final reward
     if self.pulling  or True:
-        reward =  3.0*np.exp(-np.linalg.norm(damaPos-np.array([0,0,1]))) + np.exp(-np.linalg.norm(kenPos-damaPos)) - 3.0*np.dot(damaVel,localOrientation)
+        reward =  3.0*np.exp(-5.0*np.linalg.norm(damaPos-np.array([0,0,1]))) + np.exp(-5.0*np.linalg.norm(kenPos-damaPos))
           #np.dot(damaVel[2],localOrientation[2])**2 - \
           
     else:
