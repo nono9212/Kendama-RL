@@ -34,6 +34,8 @@ class KendamaEnv(gym.Env):
     self.ken = p.loadURDF("./URDF/kendama_hand/kendama_hand.urdf",cubeStartPos, cubeStartOrientation, 
                     # useMaximalCoordinates=1, ## New feature in Pybullet
                     flags=p.URDF_USE_INERTIA_FROM_FILE)
+    cubeStartPos = [0,0,0.35]
+    cubeStartOrientation = p.getQuaternionFromEuler([0,3.1415/2.0,0])
     cubeStartPos = [0,0,0.5]
     cubeStartOrientation = p.getQuaternionFromEuler([3.14,0,0])
     self.dama = p.loadURDF("./URDF/kendama_ball/kendama_ball.urdf",cubeStartPos, cubeStartOrientation, 
@@ -47,7 +49,7 @@ class KendamaEnv(gym.Env):
     self.dt = 240 # to compute acceleration
 
     # constraints 
-    self.center = p.loadURDF("./URDF/cube/cube.urdf",[0,0,0])
+    self.center = p.loadURDF("./URDF/cube/cube.urdf",[0,0,0.1])
     
     p.createConstraint(self.ken, -1, self.center, -1, p.JOINT_POINT2POINT,jointAxis=[1,0,0],parentFramePosition=[0,0,0],childFramePosition=[0,0,0])
     self.pulling = True
