@@ -6,15 +6,12 @@ import pybullet_data
 import numpy as np
 TIME_LIM = 240*5
 X_LIM, Y_LIM, Z_LIM = 2, 2, 2
-
+INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,1], [0,0,0]
+INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,0.3], [0, 3.14/2, 0]
 class KendamaEnv(gym.Env):
   """Custom Environment that follows gym interface"""
 
-
   def __init__(self):
-    '''
-
-    '''
     super(KendamaEnv, self).__init__()
     self.dt = 240.0
     # 2 (force, torque) * 3D
@@ -22,22 +19,20 @@ class KendamaEnv(gym.Env):
     # 2 objects * 3 (pos, vit, acc) * 3D
     self.observation_space = spaces.Box(low=-1, high=1,
                                         shape=(2,3), dtype=np.float32)
-
-
     self.physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
     p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
     p.setGravity(0,0,-10)
 
     # Downloading Ken and setting constraints
-    cubeStartPos = [0,0,1]
-    cubeStartOrientation = p.getQuaternionFromEuler([0,0,0])
+    cubeStartPos = INITIAL_KEN_POS
+    cubeStartOrientation = p.getQuaternionFromEuler(INITIAL_KEN_OR)
     self.ken = p.loadURDF("./URDF/kendama_hand/kendama_hand.urdf",cubeStartPos, cubeStartOrientation, 
                     flags=p.URDF_USE_INERTIA_FROM_FILE)        
-    self.ken_constraint = p.createConstraint(self.ken, -1, -1, -1, p.JOINT_FIXED, [0, 0, 0], [0,0,0], [0, 0, 1])
+    self.ken_constraint = p.createConstraint(self.ken, -1, -1, -1, p.JOINT_FIXED, [0, 0, 0], [0,0,0], cubeStartPos)
 
     # Downloading dama
-    cubeStartPos = [0.3,0,0.3]
-    cubeStartOrientation = p.getQuaternionFromEuler([0,3.14/2.0,0])
+    cubeStartPos = INITIAL_DAMA_POS
+    cubeStartOrientation = p.getQuaternionFromEuler(INITIAL_DAMA_OR)
     self.dama = p.loadURDF("./URDF/kendama_ball/kendama_ball.urdf",cubeStartPos, cubeStartOrientation, 
                     flags=p.URDF_USE_INERTIA_FROM_FILE)
     
@@ -47,12 +42,11 @@ class KendamaEnv(gym.Env):
     self.vRad_ken = (0,0,0) # to compute acceleration
     self.dt = 240 # to compute acceleration
     
-    # constraints 
-    self.center = p.loadURDF("./URDF/cube/cube.urdf",[0,0,1.1],flags=p.URDF_USE_INERTIA_FROM_FILE)
+    # constraints and center
+    self.center = p.loadURDF("./URDF/cube/cube.urdf",INITIAL_KEN_POS+np.array([0,0,0.1]),flags=p.URDF_USE_INERTIA_FROM_FILE)
     p.createConstraint(self.ken, -1, self.center, -1, p.JOINT_POINT2POINT,jointAxis=[1,0,0],parentFramePosition=[0,0,0],childFramePosition=[0,0,0])
     self.pulling = False
     self.pulling2 = False
-
 
     # Fonctionnement du pulling
     if(self.pulling):
@@ -68,17 +62,13 @@ class KendamaEnv(gym.Env):
     
     self.time = 0
     self.list_reward = []
-
-
+    # Configuration of the visualisation
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
-
-
     # On saute les premières étapes
     for _ in range(5000):
       p.stepSimulation()
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)
     p.resetDebugVisualizerCamera(1.18,40.2,-25.6,[0,0,0.82])
-
 
 
   def out_of_time(self):
@@ -196,6 +186,8 @@ class KendamaEnv(gym.Env):
     if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
       reward = 100
       done = True
+      print("IT'S A CATCH !")
+      
   # Il faut normaliser le return a chaque fois ... : se fait avec les fonctions exponentielles
 
     if self.out_of_box():
@@ -212,9 +204,13 @@ class KendamaEnv(gym.Env):
     '''
     Reset the whole environment
     '''
-    p.resetBasePositionAndOrientation(self.ken, [0,0,1], p.getQuaternionFromEuler([0,0,0]))
-    p.resetBasePositionAndOrientation(self.dama, [0.3,0,0.3], p.getQuaternionFromEuler([0,3.14/2.0,0]))
-    p.resetBasePositionAndOrientation(self.center, [0,0,1.1],p.getQuaternionFromEuler([0,0,0]))
+    cubeStartPos = INITIAL_KEN_POS
+    cubeStartOrientation = p.getQuaternionFromEuler(INITIAL_KEN_OR)
+    p.resetBasePositionAndOrientation(self.ken, cubeStartPos, cubeStartOrientation)
+    cubeStartPos = INITIAL_DAMA_POS
+    cubeStartOrientation = p.getQuaternionFromEuler(INITIAL_DAMA_OR)
+    p.resetBasePositionAndOrientation(self.dama, cubeStartPos, cubeStartOrientation)
+    p.resetBasePositionAndOrientation(self.center, INITIAL_KEN_POS + np.array([0,0,0.1]), p.getQuaternionFromEuler([0,0,0]))
     self.time = 0
     kenVel,kenVelRad = p.getBaseVelocity(self.ken)
     kenVel, kenVelRad = np.array(kenVel), np.array(kenVelRad)
@@ -233,16 +229,20 @@ class KendamaEnv(gym.Env):
     self.v_ken = (0,0,0)
     self.vRad_dama = (0,0,0)
     self.vRad_ken = (0,0,0)
+
     return observation  # reward, done, info can't be included
+  
+  
   def close (self):
     p.disconnect()
+
 
   def iscolliding(self):
     '''
     Determine if there is a collision between the kendama and the ball
     '''
     pdama = np.array(p.getBasePositionAndOrientation(self.dama)[0])
-    pdama[2] += 0.03
+    pdama[2] -= 0.077
     pken = np.array(p.getBasePositionAndOrientation(self.ken)[0])
-    return np.linalg.norm(pdama-pken) < 0.03
+    return np.linalg.norm(pdama-pken) < 0.005 # Threshold has been determined after some tests
 
