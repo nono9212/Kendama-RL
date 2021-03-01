@@ -39,9 +39,40 @@ class KendamaEnv(gym.Env):
     self.v_dama = (0,0,0) # to compute acceleration
     self.vRad_dama = (0,0,0) # to compute acceleration
     self.vRad_ken = (0,0,0) # to compute acceleration
-    self.dt = 10 # to compute acceleration
+    self.dt = 240 # to compute acceleration
+
+    # constraints 
+    self.center = p.loadURDF("./URDF/cube/cube.urdf",[0,0,0])
+    
+    p.createConstraint(self.ken, -1, self.center, -1, p.JOINT_POINT2POINT,jointAxis=[1,0,0],parentFramePosition=[0,0,0],childFramePosition=[0,0,0])
+    self.pulling = True
+    self.link = p.createConstraint(self.center, -1, self.dama, -1, p.JOINT_POINT2POINT,jointAxis=[1,1,1],parentFramePosition=[0,0,0],childFramePosition=[0.5,0,0])
+    p.changeConstraint(self.link,maxForce=10000)
+
+
 
   def step(self, action):
+    # tension 
+    if(self.pulling):
+        force = p.getConstraintState(self.link)
+    else :
+        force = [0,0,0]
+    #print("({:.2f} {:.2f} {:.2f})".format(force[0], force[1], force[2]))
+    a = np.array(p.getBasePositionAndOrientation(self.center)[0])
+    a -= np.array(p.getBasePositionAndOrientation(self.dama)[0])
+    tension = np.dot(a,np.array(force))
+
+    if(tension < 0 and self.pulling):
+        self.pulling = False
+        p.removeConstraint(self.link)
+    if(np.linalg.norm(a) > 0.5 and not self.pulling):
+        self.pulling = True
+        axis = np.dot(np.linalg.inv(np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]), [3,3])), a/np.linalg.norm(a))
+        self.link = p.createConstraint(self.center, -1, self.dama, -1, p.JOINT_POINT2POINT,axis/2.0, [0, 0, 0],axis/2.0)
+        p.changeConstraint(self.link,maxForce=10000)
+
+
+
     pos_ken,_ = p.getBasePositionAndOrientation(self.ken)
     p.applyExternalForce(objectUniqueId=self.ken, linkIndex=-1,
                          forceObj=action[0], posObj=pos_ken, flags=p.WORLD_FRAME)
