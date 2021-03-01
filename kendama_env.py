@@ -11,7 +11,7 @@ class KendamaEnv(gym.Env):
 
   def __init__(self):
     super(KendamaEnv, self).__init__()
-
+    self.dt = 240.0
     # 2 (force, torque) * 3D
     self.action_space = spaces.Box(low=-1, high=1,
                                         shape=(2,3), dtype=np.float32)
