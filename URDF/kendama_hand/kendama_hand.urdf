@@ -14,7 +14,7 @@
   <visual>
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <geometry>
-      <mesh filename="meshes/kendama_hand.obj" scale="0.001 0.001 0.001"/>
+      <mesh filename="meshes/base_link.obj" scale="0.001 0.001 0.001"/>
     </geometry>
     <material name="silver"/>
     <material/>
@@ -22,7 +22,7 @@
   <collision>
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <geometry>
-      <mesh filename="meshes/kendama_hand.obj" scale="0.001 0.001 0.001"/>
+      <mesh filename="meshes/base_link.obj" scale="0.001 0.001 0.001"/>
     </geometry>
   </collision>
 </link>
