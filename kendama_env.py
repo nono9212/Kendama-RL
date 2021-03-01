@@ -12,6 +12,9 @@ class KendamaEnv(gym.Env):
 
 
   def __init__(self):
+    '''
+
+    '''
     super(KendamaEnv, self).__init__()
     self.dt = 240.0
     # 2 (force, torque) * 3D
@@ -25,13 +28,14 @@ class KendamaEnv(gym.Env):
     p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
     p.setGravity(0,0,-10)
 
-
+    # Downloading Ken and setting constraints
     cubeStartPos = [0,0,1]
     cubeStartOrientation = p.getQuaternionFromEuler([0,0,0])
     self.ken = p.loadURDF("./URDF/kendama_hand/kendama_hand.urdf",cubeStartPos, cubeStartOrientation, 
                     flags=p.URDF_USE_INERTIA_FROM_FILE)        
     self.ken_constraint = p.createConstraint(self.ken, -1, -1, -1, p.JOINT_FIXED, [0, 0, 0], [0,0,0], [0, 0, 1])
 
+    # Downloading dama
     cubeStartPos = [0.3,0,0.3]
     cubeStartOrientation = p.getQuaternionFromEuler([0,3.14/2.0,0])
     self.dama = p.loadURDF("./URDF/kendama_ball/kendama_ball.urdf",cubeStartPos, cubeStartOrientation, 
@@ -42,14 +46,15 @@ class KendamaEnv(gym.Env):
     self.vRad_dama = (0,0,0) # to compute acceleration
     self.vRad_ken = (0,0,0) # to compute acceleration
     self.dt = 240 # to compute acceleration
-
+    
     # constraints 
     self.center = p.loadURDF("./URDF/cube/cube.urdf",[0,0,1.1],flags=p.URDF_USE_INERTIA_FROM_FILE)
-    
     p.createConstraint(self.ken, -1, self.center, -1, p.JOINT_POINT2POINT,jointAxis=[1,0,0],parentFramePosition=[0,0,0],childFramePosition=[0,0,0])
     self.pulling = False
     self.pulling2 = False
 
+
+    # Fonctionnement du pulling
     if(self.pulling):
       posAttacheDama, angleDama = p.getBasePositionAndOrientation(self.dama)
       posAttacheDama = np.array(posAttacheDama) + np.dot(np.linalg.inv(np.reshape(p.getMatrixFromQuaternion(angleDama),[3,3])),np.array([0.03,0,0]))
@@ -62,10 +67,13 @@ class KendamaEnv(gym.Env):
       p.changeConstraint(self.link,maxForce=10)
     
     self.time = 0
+    self.list_reward = []
 
 
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
 
+
+    # On saute les premières étapes
     for _ in range(5000):
       p.stepSimulation()
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)
@@ -74,13 +82,19 @@ class KendamaEnv(gym.Env):
 
 
   def out_of_time(self):
+    '''
+    Checks if the simulation has finished 
+    '''
     return self.time > TIME_LIM
   
   # check spatial limits
-  def out_of_box(self, observation):
+  def out_of_box(self):
+    '''
+    Checks if the ken or the dama are outside from the box
+    '''
     return False
-    kx, ky, kz = np.absolute(observation[0,0])
-    dx, dy, dz = np.absolute(observation[1,0])
+    kx, ky, kz = np.absolute(p.getBasePositionAndOrientation(self.ken)[0])
+    dx, dy, dz = np.absolute(p.getBasePositionAndOrientation(self.dama)[0])
 
     if ( kx > X_LIM or dx > X_LIM):
       return True
@@ -98,7 +112,8 @@ class KendamaEnv(gym.Env):
         force = p.getConstraintState(self.link)
     else :
         force = [0,0,0]
-    #print("({:.2f} {:.2f} {:.2f})".format(force[0], force[1], force[2]))
+    
+    # We work the dynamics of the system
     posAttacheDama, angleDama = p.getBasePositionAndOrientation(self.dama)
     posAttacheDama = np.array(posAttacheDama) + np.dot(np.linalg.inv(np.reshape(p.getMatrixFromQuaternion(angleDama),[3,3])),np.array([0.03,0,0]))
     posCenterCube, angleCenterCube = p.getBasePositionAndOrientation(self.ken)
@@ -108,59 +123,64 @@ class KendamaEnv(gym.Env):
 
     dirFil = posAttacheDama - posCenterCube
     tension = np.dot(dirFil/np.linalg.norm(dirFil),np.array(force))
+
+    # What happens when there is no more tension
     if(tension < 0 and self.pulling ):
         self.pulling = False
         p.removeConstraint(self.link)
+
+    # What happens when tension comes back
     if(np.linalg.norm(vec) > 0.5 and not self.pulling):
         self.pulling = True
         self.pulling2 = True
-
         self.link = p.createConstraint(self.center, -1, self.dama, -1, p.JOINT_POINT2POINT,[1,1,1], vec/np.linalg.norm(vec)*0.5, [0.03,0,0])
         p.changeConstraint(self.link,maxForce=10)
-
+    
+    # Friction when there is tension
     if np.linalg.norm(vec) > 0.5 : 
         friction = 0.05
         friction_force = - friction * (np.array(p.getBaseVelocity(self.dama)[0]) - np.array(p.getBaseVelocity(self.ken)[0]))
         p.applyExternalForce(objectUniqueId=self.dama, linkIndex=-1,
                          forceObj=friction_force, posObj=np.array(p.getBasePositionAndOrientation(self.dama)[0]), flags=p.WORLD_FRAME)
+    
+    # Action du kendama : Changement de la contrainte
+    n_orn = p.getQuaternionFromEuler(action[1])
+    p.changeConstraint(self.ken_constraint, action[0], jointChildFrameOrientation=n_orn, maxForce=10)
 
-      
-
-
-    # actions
-    pos_ken,_ = p.getBasePositionAndOrientation(self.ken)
-
-    # Changement de la contrainte
-    n_orn = p.getQuaternionFromEuler(action[3:])
-    p.changeConstraint(self.ken_constraint, action[:3], jointChildFrameOrientation=n_orn, maxForce=10)
-
+    # Make pybullet simulation work
     p.stepSimulation()
+
+    # Get observations from the action result
+    # Get ken informations
     kenVel,kenVelRad = p.getBaseVelocity(self.ken)
     kenVel, kenVelRad = np.array(kenVel), np.array(kenVelRad)
-    kenAcc = np.subtract(kenVel, self.v_ken) / (self.dt*1000)
-    kenAccRad = np.subtract(kenVelRad, self.vRad_ken) / (self.dt*1000)
+    # kenAcc = np.subtract(kenVel, self.v_ken) / (self.dt*1000)
+    # kenAccRad = np.subtract(kenVelRad, self.vRad_ken) / (self.dt*1000)
     self.v_ken = kenVel
-    self.vRad_ken = kenAccRad
+    self.vRad_ken = kenVelRad
     kenPos,kenAngle = p.getBasePositionAndOrientation(self.ken)
     kenPos, kenAngle = np.array(kenPos), np.array(kenAngle)
+
+    # Get dama observations
     damaVel,damaVelRad = p.getBaseVelocity(self.dama)
     damaVel, damaVelRad = np.array(damaVel), np.array(damaVelRad)
-    damaAcc = np.subtract(damaVel, self.v_dama) / (self.dt*1000)
-    damaAccRad = np.subtract(damaVelRad, self.vRad_dama) / (self.dt*1000)
+    # damaAcc = np.subtract(damaVel, self.v_dama) / (self.dt*1000)
+    # damaAccRad = np.subtract(damaVelRad, self.vRad_dama) / (self.dt*1000)
     self.v_dama = damaVel
-    self.vRad_dama = damaAccRad
+    self.vRad_dama = damaVelRad
     damaPos,damaAngle = p.getBasePositionAndOrientation(self.dama)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
+
     observation = np.array([kenPos,damaPos])
-    done = False
-    info = False
+    done = False #TODO : We have to change that
+    info = False #TODO : Check what info is
 
-
+    # Je ne sais pas ce que cela fait...
     localOrientation = np.array([0,0,1])
     r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]),[3,3])
     localOrientation = np.dot(r, localOrientation)
 
-    # add final reward
+    # Calculate the reward
     if self.pulling  or True:
         reward =  3.0*np.exp(-np.linalg.norm(damaPos-np.array([0,0,1]))) + np.exp(-np.linalg.norm(kenPos-damaPos)) - 3.0*np.dot(damaVel,localOrientation)
           #np.dot(damaVel[2],localOrientation[2])**2 - \
@@ -178,34 +198,34 @@ class KendamaEnv(gym.Env):
       done = True
   # Il faut normaliser le return a chaque fois ... : se fait avec les fonctions exponentielles
 
-    if self.out_of_box(observation):
+    if self.out_of_box():
       done = True
       reward = 0
 
     if self.out_of_time():
       done = True
       reward = 0
+    
     return observation, reward, done, {}
 
   def reset(self):
+    '''
+    Reset the whole environment
+    '''
     p.resetBasePositionAndOrientation(self.ken, [0,0,1], p.getQuaternionFromEuler([0,0,0]))
     p.resetBasePositionAndOrientation(self.dama, [0.3,0,0.3], p.getQuaternionFromEuler([0,3.14/2.0,0]))
     p.resetBasePositionAndOrientation(self.center, [0,0,1.1],p.getQuaternionFromEuler([0,0,0]))
     self.time = 0
     kenVel,kenVelRad = p.getBaseVelocity(self.ken)
     kenVel, kenVelRad = np.array(kenVel), np.array(kenVelRad)
-    kenAcc = np.subtract(kenVel, self.v_ken) / (self.dt*1000)
-    kenAccRad = np.subtract(kenVelRad, self.vRad_ken) / (self.dt*1000)
     self.v_ken = kenVel
-    self.vRad_ken = kenAccRad
+    self.vRad_ken = kenVelRad
     kenPos,kenAngle = p.getBasePositionAndOrientation(self.ken)
     kenPos, kenAngle = np.array(kenPos), np.array(kenAngle)
     damaVel,damaVelRad = p.getBaseVelocity(self.dama)
     damaVel, damaVelRad = np.array(damaVel), np.array(damaVelRad)
-    damaAcc = np.subtract(damaVel, self.v_dama) / (self.dt*1000)
-    damaAccRad = np.subtract(damaVelRad, self.vRad_dama) / (self.dt*1000)
     self.v_dama = damaVel
-    self.vRad_dama = damaAccRad
+    self.vRad_dama = damaVelRad
     damaPos,damaAngle = p.getBasePositionAndOrientation(self.dama)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
     observation = np.array([kenPos,damaPos])
@@ -218,6 +238,9 @@ class KendamaEnv(gym.Env):
     p.disconnect()
 
   def iscolliding(self):
+    '''
+    Determine if there is a collision between the kendama and the ball
+    '''
     pdama = np.array(p.getBasePositionAndOrientation(self.dama)[0])
     pdama[2] += 0.03
     pken = np.array(p.getBasePositionAndOrientation(self.ken)[0])
