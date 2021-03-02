@@ -11,17 +11,19 @@ class KendamaEnv(gym.Env):
   """Custom Environment that follows gym interface"""
 
 
-  def __init__(self):
+  def __init__(self, render=True):
     super(KendamaEnv, self).__init__()
     self.dt = 240.0
     # 2 (force, torque) * 3D
-    self.action_space = spaces.Box(low=np.array([-2,-2,0,-3,-3,-3]), high=np.array([2,2,2,3,3,3]))
+    self.action_space = spaces.Box(low=np.array([-0.5,-0.5,0.5,-3.14,-3.14,-3.14]), high=np.array([0.5,0.5,1.5,3.14,3.14,3.14]))
     # 2 objects * 3 (pos, vit, acc) * 3D
     self.observation_space = spaces.Box(low=-1, high=1,
-                                        shape=(2,3), dtype=np.float32)
+                                        shape=(10,3), dtype=np.float32)
 
-
-    self.physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
+    if(render):
+      self.physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
+    else:
+      self.physicsClient = p.connect(p.DIRECT)
     p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
     p.setGravity(0,0,-10)
 
@@ -150,8 +152,11 @@ class KendamaEnv(gym.Env):
     self.v_dama = damaVel
     self.vRad_dama = damaAccRad
     damaPos,damaAngle = p.getBasePositionAndOrientation(self.dama)
+    damaAngle = p.getEulerFromQuaternion(damaAngle)
+    kenAngle = p.getEulerFromQuaternion(kenAngle)
+    kenAngle = np.array(kenAngle)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
-    observation = np.array([kenPos,damaPos])
+    observation = np.array([kenPos,kenVel,kenAcc,kenAngle,kenVelRad,damaPos,damaVel,damaAcc,damaAngle,damaVelRad])
     done = False
     info = False
 
@@ -162,7 +167,7 @@ class KendamaEnv(gym.Env):
 
     # add final reward
     if self.pulling  or True:
-        reward =  3.0*np.exp(-5.0*np.linalg.norm(damaPos-np.array([0,0,1]))) + np.exp(-5.0*np.linalg.norm(kenPos-damaPos))
+        reward =  np.exp(-5.0*np.linalg.norm(damaPos-np.array([0,0,1]))) + np.exp(-5.0*np.linalg.norm(kenPos-damaPos)) + np.exp(-200.0*np.linalg.norm(np.array(action)-np.concatenate((kenPos,kenAngle))))
           #np.dot(damaVel[2],localOrientation[2])**2 - \
           
     else:
@@ -207,8 +212,10 @@ class KendamaEnv(gym.Env):
     self.v_dama = damaVel
     self.vRad_dama = damaAccRad
     damaPos,damaAngle = p.getBasePositionAndOrientation(self.dama)
+    damaAngle = p.getEulerFromQuaternion(damaAngle)
+    kenAngle = p.getEulerFromQuaternion(kenAngle)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
-    observation = np.array([kenPos,damaPos])
+    observation = np.array([kenPos,kenVel,kenAcc,kenAngle,kenVelRad,damaPos,damaVel,damaAcc,damaAngle,damaVelRad])
     self.v_dama = (0,0,0)
     self.v_ken = (0,0,0)
     self.vRad_dama = (0,0,0)
