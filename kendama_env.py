@@ -6,8 +6,8 @@ import pybullet_data
 import numpy as np
 TIME_LIM = 240*5
 X_LIM, Y_LIM, Z_LIM = 2, 2, 2
-INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,1], [0,0,0]
-INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,0.3], [0, 3.14/2, 0]
+INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,0.3], [0,0,0]
+INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,1], [0, 3.14/2, 0]
 class KendamaEnv(gym.Env):
   """Custom Environment that follows gym interface"""
 
@@ -15,7 +15,7 @@ class KendamaEnv(gym.Env):
     super(KendamaEnv, self).__init__()
     self.dt = 240.0
     # 2 (force, torque) * 3D
-    self.action_space = spaces.Box(low=np.array([-2,-2,0,-3,-3,-3]), high=np.array([2,2,2,3,3,3]))
+    self.action_space = spaces.Box(low=np.array([-2,-2,0,-3.14/2,-3.14/2,-3.14/2]), high=np.array([2,2,2,3.14/2,3.14/2,3.14/2]))
     # 2 objects * 3 (pos, vit, acc) * 3D
     self.observation_space = spaces.Box(low=-1, high=1,
                                         shape=(2,3), dtype=np.float32)
@@ -165,38 +165,7 @@ class KendamaEnv(gym.Env):
     done = False #TODO : We have to change that
     info = False #TODO : Check what info is
 
-    # Je ne sais pas ce que cela fait...
-    localOrientation = np.array([0,0,1])
-    r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]),[3,3])
-    localOrientation = np.dot(r, localOrientation)
-
-    # Calculate the reward
-    if self.pulling  or True:
-        reward =  3.0*np.exp(-np.linalg.norm(damaPos-np.array([0,0,1]))) + np.exp(-np.linalg.norm(kenPos-damaPos)) - 3.0*np.dot(damaVel,localOrientation)
-          #np.dot(damaVel[2],localOrientation[2])**2 - \
-          
-    else:
-      reward = 1.0/np.linalg.norm(kenPos-damaPos) - np.dot(damaVel,localOrientation)
-
-    # dama is back beneath the ken, then it is a final state
-    if self.pulling2 and damaPos[2] < kenPos[2] and False:
-      done = True
-      reward = 0
-
-    if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
-      reward = 100
-      done = True
-      print("IT'S A CATCH !")
-      
-  # Il faut normaliser le return a chaque fois ... : se fait avec les fonctions exponentielles
-
-    if self.out_of_box():
-      done = True
-      reward = 0
-
-    if self.out_of_time():
-      done = True
-      reward = 0
+    reward, done = self.get_reward(damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad, done)
     
     return observation, reward, done, {}
 
@@ -241,8 +210,57 @@ class KendamaEnv(gym.Env):
     '''
     Determine if there is a collision between the kendama and the ball
     '''
-    pdama = np.array(p.getBasePositionAndOrientation(self.dama)[0])
+    pdama = np.array(p.getBasePositionAndOrientation(self.dama)[0]).copy()
     pdama[2] -= 0.077
     pken = np.array(p.getBasePositionAndOrientation(self.ken)[0])
     return np.linalg.norm(pdama-pken) < 0.005 # Threshold has been determined after some tests
+
+  def get_reward(self, damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad, done):
+    '''
+    Every args must be an array (except done which is a bool)
+    Dimensions of arrays : 
+    Pos : 3d ;
+    Vel : 3d ;
+    Angle : 4d (quaternions);
+    VelRad : 3d (angular vel).
+    '''
+    reward = 0
+
+    # Je ne sais pas ce que cela fait...
+    localOrientation = np.array([0,0,1])
+    r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]),[3,3])
+    localOrientation = np.dot(r, localOrientation)
+
+    # Dama is under the ken
+    if damaPos[2] < kenPos[2]:
+        reward = 0
+
+    # Dama is above the ken
+    else :
+      
+      #Reward sur la différence en position horizontale
+      #reward += np.exp(-np.linalg.norm(damaPos[0:2] - kenPos[0:2])**2)
+      #Reward sur la différence en orientation
+      reward += np.exp(-np.linalg.norm(damaAngle[0:2] - kenAngle[0:2] + np.array(0,3.14/2)**2)
+
+      #Reward sur l'anticolinéarité entre vecteur vitesse du dama et vecteur orientation du ken
+      localOrientation = np.array([0,0,1])
+      r = np.reshape(p.getMatrixFromQuaternion(kenAngle),[3,3])
+      vect_ken_orientation = np.dot(r, localOrientation)
+      #reward += np.exp(-(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel) + 1)**2)) # exp( - (u*v +1)**2 )
+      
+    if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
+      reward = 100
+      done = True
+      print("IT'S A CATCH !")
+
+    if self.out_of_box():
+      done = True
+      reward = 0
+
+    if self.out_of_time():
+      done = True
+      reward = 0
+
+    return reward, done
 

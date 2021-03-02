@@ -18,11 +18,13 @@ def run():
             # action = [list(np.random.normal(scale = 0,loc=1,size = 3)),list(np.random.normal(scale = 10,size = 3))]
             action = [[0,0,0],[0,0,0]]
             ob, reward, done, _ = env.step(action)
-            
+            print(reward)
+            clear_output(wait=True)
+
             #if(done):
-            #    env.reset()
+            #    env.close()
+            #    break
 
 if __name__ == "__main__":
-    print('OK !')
     run()
 
