@@ -87,7 +87,6 @@ class KendamaEnv(gym.Env):
     '''
     Checks if the ken or the dama are outside from the box
     '''
-    return False
     kx, ky, kz = np.absolute(p.getBasePositionAndOrientation(self.ken)[0])
     dx, dy, dz = np.absolute(p.getBasePositionAndOrientation(self.dama)[0])
 
@@ -149,7 +148,7 @@ class KendamaEnv(gym.Env):
     # Get ken informations
     kenVel,kenVelRad = p.getBaseVelocity(self.ken)
     kenVel, kenVelRad = np.array(kenVel), np.array(kenVelRad)
-    # kenAcc = np.subtract(kenVel, self.v_ken) / (self.dt*1000)
+    kenAcc = np.subtract(kenVel, self.v_ken) / (self.dt*1000)
     # kenAccRad = np.subtract(kenVelRad, self.vRad_ken) / (self.dt*1000)
     self.v_ken = kenVel
     self.vRad_ken = kenVelRad
@@ -159,7 +158,7 @@ class KendamaEnv(gym.Env):
     # Get dama observations
     damaVel,damaVelRad = p.getBaseVelocity(self.dama)
     damaVel, damaVelRad = np.array(damaVel), np.array(damaVelRad)
-    # damaAcc = np.subtract(damaVel, self.v_dama) / (self.dt*1000)
+    damaAcc = np.subtract(damaVel, self.v_dama) / (self.dt*1000)
     # damaAccRad = np.subtract(damaVelRad, self.vRad_dama) / (self.dt*1000)
     self.v_dama = damaVel
     self.vRad_dama = damaVelRad
@@ -169,10 +168,8 @@ class KendamaEnv(gym.Env):
     kenAngle = np.array(kenAngle)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
     observation = np.array([kenPos,kenVel,kenAcc,kenAngle,kenVelRad,damaPos,damaVel,damaAcc,damaAngle,damaVelRad])
-    done = False #TODO : We have to change that
-    info = False #TODO : Check what info is
 
-    reward, done = self.get_reward(damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad, done)
+    reward, done = self.get_reward(damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad)
     return observation, reward, done, {}
 
   def reset(self):
@@ -201,7 +198,7 @@ class KendamaEnv(gym.Env):
     damaAngle = p.getEulerFromQuaternion(damaAngle)
     kenAngle = p.getEulerFromQuaternion(kenAngle)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
-    observation = np.array([kenPos,kenVel,kenAcc,kenAngle,kenVelRad,damaPos,damaVel,damaAcc,damaAngle,damaVelRad])
+    observation = np.array([kenPos,kenVel,[0,0,0],kenAngle,kenVelRad,damaPos,damaVel,[0,0,0],damaAngle,damaVelRad])
     self.v_dama = (0,0,0)
     self.v_ken = (0,0,0)
     self.vRad_dama = (0,0,0)
@@ -223,15 +220,16 @@ class KendamaEnv(gym.Env):
     pken = np.array(p.getBasePositionAndOrientation(self.ken)[0])
     return np.linalg.norm(pdama-pken) < 0.005 # Threshold has been determined after some tests
 
-  def get_reward(self, damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad, done):
+  def get_reward(self, damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad):
     '''
     Every args must be an array (except done which is a bool)
     Dimensions of arrays : 
     Pos : 3d ;
     Vel : 3d ;
-    Angle : 4d (quaternions);
+    Angle : 3d (euler);
     VelRad : 3d (angular vel).
     '''
+    done = False
     reward = 0
 
     # Je ne sais pas ce que cela fait...
@@ -249,13 +247,13 @@ class KendamaEnv(gym.Env):
       #Reward sur la différence en position horizontale
       #reward += np.exp(-np.linalg.norm(damaPos[0:2] - kenPos[0:2])**2)
       #Reward sur la différence en orientation
-      reward += np.exp(-np.linalg.norm(damaAngle[0:2] - kenAngle[0:2] + np.array(0,3.14/2)**2)
+      reward += np.exp(-2.0*np.linalg.norm(damaAngle[0:2] - kenAngle[0:2] + np.array([0,3.14/2.0]))**2)
 
       #Reward sur l'anticolinéarité entre vecteur vitesse du dama et vecteur orientation du ken
-      localOrientation = np.array([0,0,1])
-      r = np.reshape(p.getMatrixFromQuaternion(kenAngle),[3,3])
-      vect_ken_orientation = np.dot(r, localOrientation)
-      #reward += np.exp(-(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel) + 1)**2)) # exp( - (u*v +1)**2 )
+      localOrientation = np.array([0,0,-1])
+      r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(kenAngle)),[3,3])
+      vect_ken_orientation = np.matmul(r, localOrientation)
+      reward += np.exp(-2.0*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2) # exp( - (u*v +1)**2 )
       
     if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
       reward = 100
