@@ -4,10 +4,10 @@ import pybullet as p
 import time
 import pybullet_data
 import numpy as np
-TIME_LIM = 240*5
-X_LIM, Y_LIM, Z_LIM = 2, 2, 2
-INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,0.3], [0,0,0]
-INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,1], [0, 3.14/2, 0]
+TIME_LIM = 240*3
+X_LIM, Y_LIM, Z_LIM = 1, 1, 3
+INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,1], [0,0,0]
+INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,0.6], [0, 3.14/2, 0]
 class KendamaEnv(gym.Env):
   """Custom Environment that follows gym interface"""
 
@@ -16,7 +16,7 @@ class KendamaEnv(gym.Env):
     super(KendamaEnv, self).__init__()
     self.dt = 240.0
     # 2 (force, torque) * 3D
-    self.action_space = spaces.Box(low=np.array([-0.5,-0.5,0.5,-3.14,-3.14,-3.14]), high=np.array([0.5,0.5,1.5,3.14,3.14,3.14]))
+    self.action_space = spaces.Box(low=np.array([-1,-1,-1,-1,-1,-1]), high=np.array([1,1,1,1,1,1]))
     # 2 objects * 3 (pos, vit, acc) * 3D
     self.observation_space = spaces.Box(low=-1, high=1,
                                         shape=(10,3), dtype=np.float32)
@@ -70,8 +70,8 @@ class KendamaEnv(gym.Env):
     # Configuration of the visualisation
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     # On saute les premières étapes
-    for _ in range(5000):
-      p.stepSimulation()
+    #for _ in range(5000):
+      #p.stepSimulation()
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)
     p.resetDebugVisualizerCamera(1.18,40.2,-25.6,[0,0,0.82])
 
@@ -94,12 +94,22 @@ class KendamaEnv(gym.Env):
       return True
     if ( ky > Y_LIM or dy > Y_LIM):
       return True
-    if ( kz > Z_LIM or dz > Z_LIM):
-      return True
+    if ( kz > Z_LIM or dz < Z_LIM):
+      return False
 
     return False
 
   def step(self, action):
+    #Resizing action 
+    action[0] /= 2.0 #to get -0.5 - 0.5
+    action[1] /= 2.0
+
+    action[2] /= 2.0
+    action[2] += 1.0
+
+    action[3], action[4], action[5] = action[3]*3.14, action[4]*3.14/2.0, action[5]*3.14
+
+
     self.time += 1
     # tension 
     if(self.pulling):
@@ -138,8 +148,8 @@ class KendamaEnv(gym.Env):
                          forceObj=friction_force, posObj=np.array(p.getBasePositionAndOrientation(self.dama)[0]), flags=p.WORLD_FRAME)
     
     # Action du kendama : Changement de la contrainte
-    n_orn = p.getQuaternionFromEuler(action[1])
-    p.changeConstraint(self.ken_constraint, action[0], jointChildFrameOrientation=n_orn, maxForce=10)
+    n_orn = p.getQuaternionFromEuler(action[3:])
+    p.changeConstraint(self.ken_constraint, action[:3], jointChildFrameOrientation=n_orn, maxForce=10)
 
     # Make pybullet simulation work
     p.stepSimulation()
@@ -168,9 +178,24 @@ class KendamaEnv(gym.Env):
     kenAngle = np.array(kenAngle)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
     observation = np.array([kenPos,kenVel,kenAcc,kenAngle,kenVelRad,damaPos,damaVel,damaAcc,damaAngle,damaVelRad])
-
-    reward, done = self.get_reward(damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad)
+    observation = self.normalizeObs(observation)
+    reward, done = self.get_reward(damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad,action)
     return observation, reward, done, {}
+  
+  def normalizeObs(self, obs):
+    obs[0] = np.clip((obs[0] + np.array([0,0, -1]))*2.0,-1,1)
+    obs[5] = np.clip((obs[5] + np.array([0,0, -1]))*2.0,-1,1)
+
+    obs[1], obs[6] = np.clip(obs[1]/2.0,-1,1), np.clip(obs[6]/2.0,-1,1)
+    obs[2], obs[7] = np.clip(obs[2]/4.0,-1,1), np.clip(obs[7]/4.0,-1,1)
+
+    obs[3] = np.clip(np.multiply(obs[3], [1.0/3.14, 2.0/3.14, 1.0/3.14]),-1,1)
+    obs[8] = np.clip(np.multiply(obs[8], [1.0/3.14, 2.0/3.14, 1.0/3.14]),-1,1)
+
+    obs[4] = np.clip(np.multiply(obs[4], [1.0/3.14/3.0, 2.0/3.14/3.0, 1.0/3.14/3.0]),-1,1)
+    obs[9] = np.clip(np.multiply(obs[9], [1.0/3.14/3.0, 2.0/3.14/3.0, 1.0/3.14/3.0]),-1,1)
+
+    return obs
 
   def reset(self):
     '''
@@ -220,7 +245,7 @@ class KendamaEnv(gym.Env):
     pken = np.array(p.getBasePositionAndOrientation(self.ken)[0])
     return np.linalg.norm(pdama-pken) < 0.005 # Threshold has been determined after some tests
 
-  def get_reward(self, damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad):
+  def get_reward(self, damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad,action):
     '''
     Every args must be an array (except done which is a bool)
     Dimensions of arrays : 
@@ -236,6 +261,7 @@ class KendamaEnv(gym.Env):
     localOrientation = np.array([0,0,1])
     r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]),[3,3])
     localOrientation = np.dot(r, localOrientation)
+
 
     # Dama is under the ken
     if damaPos[2] < kenPos[2]:
@@ -254,7 +280,12 @@ class KendamaEnv(gym.Env):
       r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(kenAngle)),[3,3])
       vect_ken_orientation = np.matmul(r, localOrientation)
       reward += np.exp(-2.0*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2) # exp( - (u*v +1)**2 )
-      
+    
+    #Finally reward for not moving to much and staying around [0,0,1]
+    reward += np.exp(- 40.0* np.linalg.norm(kenPos - np.array([0,0,1]))**2)
+    reward += np.exp(- 400.0* np.linalg.norm(kenPos - np.array(action[:3]))**2)
+    reward += np.exp(- 400.0* np.linalg.norm(kenAngle - np.array(action[3:]))**2)
+
     if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
       reward = 100
       done = True
