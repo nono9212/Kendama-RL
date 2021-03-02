@@ -283,11 +283,16 @@ class KendamaEnv(gym.Env):
     
     #Finally reward for not moving to much and staying around [0,0,1]
     reward += np.exp(- 40.0* np.linalg.norm(kenPos - np.array([0,0,1]))**2)
-    reward += np.exp(- 400.0* np.linalg.norm(kenPos - np.array(action[:3]))**2)
-    reward += np.exp(- 400.0* np.linalg.norm(kenAngle - np.array(action[3:]))**2)
+    reward += 3*np.exp(- 100.0* np.linalg.norm(kenPos - np.array(action[:3]))**2)
+    reward += 3*np.exp(- 100.0* np.linalg.norm(kenAngle - np.array(action[3:]))**2)
+
+    #Experimental : give reward when no tension in the string
+    if(not self.pulling):
+      reward *= 2.0
+
 
     if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
-      reward = 100
+      reward = 1000.0
       done = True
       print("IT'S A CATCH !")
 
