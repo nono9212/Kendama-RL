@@ -4,10 +4,11 @@ import pybullet as p
 import time
 import pybullet_data
 import numpy as np
+from IPython.display import clear_output
 TIME_LIM = 240*3
 X_LIM, Y_LIM, Z_LIM = 1, 1, 3
-INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,0.3], [0,0,0]
-INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,0.6], [0, 3.14/2, 0]
+INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,0.7], [0,0,0]
+INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,0.3], [0, 3.14/2, 0]
 class KendamaEnv(gym.Env):
   """Custom Environment that follows gym interface"""
 
@@ -18,7 +19,7 @@ class KendamaEnv(gym.Env):
     self.action_space = spaces.Box(low=np.array([-1,-1,-1,-1,-1,-1]), high=np.array([1,1,1,1,1,1]))
     # 2 objects * 3 (pos, vit, acc) * 3D
     self.observation_space = spaces.Box(low=-1, high=1,
-                                        shape=(10,3), dtype=np.float32)
+                                        shape=(4,3), dtype=np.float32)
 
     if(render):
       self.physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
@@ -53,6 +54,8 @@ class KendamaEnv(gym.Env):
     self.pulling2 = False
     self.wasHigher = False
 
+    self.targetKenPos = np.array(INITIAL_KEN_POS)
+    self.targetKenAng = np.array(INITIAL_KEN_OR)
     # Fonctionnement du pulling
     if(self.pulling):
       posAttacheDama, angleDama = p.getBasePositionAndOrientation(self.dama)
@@ -119,40 +122,52 @@ class KendamaEnv(gym.Env):
     
     # We work the dynamics of the system
     posAttacheDama, angleDama = p.getBasePositionAndOrientation(self.dama)
-    posAttacheDama = np.array(posAttacheDama) + np.matmul(np.linalg.inv(np.reshape(p.getMatrixFromQuaternion(angleDama),[3,3])), np.array([-0.03,0,0]))
-    posCenterCube, angleCenterCube = p.getBasePositionAndOrientation(self.ken)
+    posAttacheDama = np.array(posAttacheDama)  + np.matmul(np.array([-0.03,0,0]),np.linalg.inv(np.reshape(p.getMatrixFromQuaternion(angleDama),[3,3])))
+    posCenterCube, angleCenterCube = p.getBasePositionAndOrientation(self.center)
     posCenterCube = np.array(posCenterCube)
-    vec = posAttacheDama - posCenterCube
-    vec = np.matmul(vec, np.reshape(p.getMatrixFromQuaternion(angleCenterCube),[3,3])) # vecteur dans le référentiel du cube
 
+    vec = posAttacheDama - posCenterCube
+    vec = np.matmul(vec,np.reshape(p.getMatrixFromQuaternion(angleCenterCube),[3,3])) # vecteur dans le référentiel du cube
+
+    
     dirFil = posAttacheDama - posCenterCube
     tension = np.dot(dirFil/np.linalg.norm(dirFil),np.array(force))
     # What happens when there is no more tension
-    if(tension < 0 and self.pulling ):
+    if( self.pulling and tension > 0): #np.linalg.norm(vec)<0.5
         self.pulling = False
         p.removeConstraint(self.link)
-
+    
     # What happens when tension comes back
     elif(np.linalg.norm(vec) > 0.5 and not self.pulling):
         self.pulling = True
         self.pulling2 = True
         self.link = p.createConstraint(self.center, -1, self.dama, -1, p.JOINT_POINT2POINT,[1,1,1], vec/np.linalg.norm(vec)*0.5, np.array([-0.03,0,0]))
-        p.changeConstraint(self.link,maxForce=10)
+        p.changeConstraint(self.link,maxForce=100)
+
     
     # Friction when there is tension
     if self.pulling : 
-        friction = 0.05
-        friction_force = - friction * (np.array(p.getBaseVelocity(self.dama)[0]) - np.array(p.getBaseVelocity(self.ken)[0]))
+        friction = 0.1
+        proj_vitesse = np.dot(dirFil/np.linalg.norm(dirFil), np.array(p.getBaseVelocity(self.dama)[0])) * dirFil/np.linalg.norm(dirFil)
+        friction_force = - friction * (proj_vitesse - np.array(p.getBaseVelocity(self.ken)[0]))
         p.applyExternalForce(objectUniqueId=self.dama, linkIndex=-1,
                          forceObj=friction_force, posObj=np.array(p.getBasePositionAndOrientation(self.dama)[0]), flags=p.WORLD_FRAME)
     
-    # Action du kendama : Changement de la contrainte
-    prvPos, prvAngle = p.getBasePositionAndOrientation(self.ken)
-    prvPos = np.array(prvPos) + np.array(action[:3])
-    prvAngle = np.array(p.getEulerFromQuaternion(prvAngle)) + np.array(action[3:])
+    #>Friction to dissipate energy
+    friction = 0.03
+    friction_force = - friction * np.array(p.getBaseVelocity(self.dama)[0])
+    p.applyExternalForce(objectUniqueId=self.dama, linkIndex=-1,
+                      forceObj=friction_force, posObj=np.array(p.getBasePositionAndOrientation(self.dama)[0]), flags=p.WORLD_FRAME) 
 
+    # Action du kendama : Changement de la contrainte
+    
+    prvPos, prvAngle = self.targetKenPos, self.targetKenAng
+    prvPos = prvPos + np.array(action[:3])
+    prvAngle = prvAngle + np.array(action[3:])
     n_orn = p.getQuaternionFromEuler(prvAngle)
-    p.changeConstraint(self.ken_constraint, prvPos, jointChildFrameOrientation=n_orn, maxForce=10)
+    self.targetKenPos = prvPos
+    self.targetKenAng = prvAngle
+    p.changeConstraint(self.ken_constraint, prvPos, jointChildFrameOrientation=n_orn, maxForce=30)
 
     # Make pybullet simulation work
     p.stepSimulation()
@@ -180,28 +195,24 @@ class KendamaEnv(gym.Env):
     kenAngle = p.getEulerFromQuaternion(kenAngle)
     kenAngle = np.array(kenAngle)
     damaPos, damaAngle = np.array(damaPos), np.array(damaAngle)
-    observation = np.array([kenPos,kenVel,kenAcc,kenAngle,kenVelRad,damaPos,damaVel,damaAcc,damaAngle,damaVelRad])
+    observation = np.array([damaPos - kenPos, damaVel - kenVel, damaAngle - kenAngle, damaVelRad - kenVelRad])
     observation = self.normalizeObs(observation)
     reward, done = self.get_reward(damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad,action)
-
-    localOrientation = np.array([1,0,0])
-    r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(damaAngle)),[3,3])
-    vect_dama_orientation = np.matmul(localOrientation, np.linalg.inv(r))
     
     return observation, reward, done, {}
   
+  def renorm_function(self, x, alpha):
+    '''
+    Renormalizing function between -1  and 1
+    '''
+    return 2 * ((1 / (1 + np.exp(-alpha*x))) - 0.5)
+
   def normalizeObs(self, obs):
-    obs[0] = np.clip((obs[0] + np.array([0,0, -1]))*2.0,-1,1)
-    obs[5] = np.clip((obs[5] + np.array([0,0, -1]))*2.0,-1,1)
+    obs[0] = self.renorm_function(obs[0], alpha=5)
+    obs[1] = self.renorm_function(obs[1], alpha=1)
 
-    obs[1], obs[6] = np.clip(obs[1]/2.0,-1,1), np.clip(obs[6]/2.0,-1,1)
-    obs[2], obs[7] = np.clip(obs[2]/4.0,-1,1), np.clip(obs[7]/4.0,-1,1)
-
-    obs[3] = np.clip(np.multiply(obs[3], [1.0/3.14, 2.0/3.14, 1.0/3.14]),-1,1)
-    obs[8] = np.clip(np.multiply(obs[8], [1.0/3.14, 2.0/3.14, 1.0/3.14]),-1,1)
-
-    obs[4] = np.clip(np.multiply(obs[4], [1.0/3.14/3.0, 2.0/3.14/3.0, 1.0/3.14/3.0]),-1,1)
-    obs[9] = np.clip(np.multiply(obs[9], [1.0/3.14/3.0, 2.0/3.14/3.0, 1.0/3.14/3.0]),-1,1)
+    obs[2] = np.clip(np.multiply(obs[2], [1.0/3.14, 2.0/3.14, 1.0/3.14]),-1,1)
+    obs[3] = self.renorm_function(obs[3], alpha=0.2/3.14)
 
     return obs
 
@@ -249,9 +260,13 @@ class KendamaEnv(gym.Env):
     '''
     Determine if there is a collision between the kendama and the ball
     '''
+    localOrientation = np.array([0,0,1])
+    r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.ken)[1]),[3,3])
+    vect_ken_orientation = np.matmul(localOrientation, np.linalg.inv(r))
+
     pdama = np.array(p.getBasePositionAndOrientation(self.dama)[0]).copy()
-    pdama[2] -= 0.077
     pken = np.array(p.getBasePositionAndOrientation(self.ken)[0])
+    pken += vect_ken_orientation / np.linalg.norm(vect_ken_orientation) * 0.077 # Spike middle position
     return np.linalg.norm(pdama-pken) < 0.005 # Threshold has been determined after some tests
 
   def get_reward(self, damaPos, kenPos, damaVel, kenVel, damaAngle, kenAngle, damaVelRad, kenVelRad,action):
@@ -265,7 +280,7 @@ class KendamaEnv(gym.Env):
     '''
     done = False
     reward = 0
-
+    rwdl = []
     # Je ne sais pas ce que cela fait...
     localOrientation = np.array([0,0,1])
     r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]),[3,3])
@@ -290,8 +305,14 @@ class KendamaEnv(gym.Env):
       
       
       #Reward sur la différence en position horizontale
-      reward += 0.5*np.exp(-30.0*np.linalg.norm(damaPos - kenPos)**2)
-
+      localOrientation = np.array([0,0,1])
+      r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(kenAngle)),[3,3])
+      vect_ken_orientation = np.matmul(localOrientation, np.linalg.inv(r))
+      spike_ken = vect_ken_orientation / np.linalg.norm(vect_ken_orientation) * 0.077 # Spike middle position
+      
+      reward += np.exp(-15.0*np.linalg.norm(damaPos - kenPos + spike_ken)**2)
+      reward += 10 * np.exp(-500.0*np.linalg.norm(damaPos - kenPos + spike_ken)**2)
+      
       #Reward sur la différence en orientation
       localOrientation = np.array([1,0,0])
       r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(damaAngle)),[3,3])
@@ -301,19 +322,18 @@ class KendamaEnv(gym.Env):
       r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(kenAngle)),[3,3])
       vect_ken_orientation = np.matmul(localOrientation, np.linalg.inv(r))
       
-      #reward += 0.3*np.exp(-2.0*(np.dot(vect_ken_orientation, vect_dama_orientation)-1)**2)
+      reward += 2 * np.exp(-10*(np.dot(vect_ken_orientation, vect_dama_orientation)+1)**2)
       #Reward sur l'anticolinéarité entre vecteur vitesse du dama et vecteur orientation du ken
-
-
-      #reward += 0.3*np.exp(-2.0*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2) # exp( - (u*v +1)**2 )
-    
+      #rwdl.append(np.exp(-10*(np.dot(vect_ken_orientation, vect_dama_orientation)+1)**2))
+      ##reward += np.exp(-10*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2) # exp( - (u*v +1)**2 )
+      #rwdl.append(np.exp(-10*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2))
     #Finally reward for staying around [0,0,1]
     #reward += 0.3*np.exp(- 5.0* np.linalg.norm(kenPos - np.array([0,0,1]))**2)
-
+    #rwdl.append(0.3*np.exp(- 5.0* np.linalg.norm(kenPos - np.array([0,0,1]))**2))
 
     #Experimental : give reward when no tension in the string
-    if(not self.pulling and self.wasHigher):
-      reward *= 1.5
+    #if(not self.pulling and self.wasHigher):
+    #  reward *= 1.5
 
 
     if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
@@ -328,6 +348,7 @@ class KendamaEnv(gym.Env):
     if self.out_of_time():
       done = True
       reward = 0
-
+    
+    
     return reward, done
 

@@ -15,15 +15,17 @@ def run():
         if elapsed_time > 1.0/env.dt:
             a += 0.005
             start_time = time.time()
+
+
             # action = [list(np.random.normal(scale = 0,loc=1,size = 3)),list(np.random.normal(scale = 10,size = 3))]
-            action = [[0,0,0],[0,0,0]]
+            action = np.array([0,0,0,0,0,0])
             ob, reward, done, _ = env.step(action)
-            print(reward)
+            #print(reward)
             clear_output(wait=True)
 
-            #if(done):
-            #    env.close()
-            #    break
+            if(done):
+                env.close()
+                break
 
 if __name__ == "__main__":
     run()
