@@ -5,7 +5,7 @@ import time
 import pybullet_data
 import numpy as np
 from IPython.display import clear_output
-TIME_LIM = 240*30
+TIME_LIM = 240*3
 X_LIM, Y_LIM, Z_LIM = 1, 1, 3
 INITIAL_KEN_POS, INITIAL_KEN_OR = [0,0,0.7], [0,0,0]
 INITIAL_DAMA_POS, INITIAL_DAMA_OR = [0,0,0.3], [0, 3.14/2, 0]
@@ -71,6 +71,8 @@ class KendamaEnv(gym.Env):
     self.time = 0
     self.killNextTime = False
     self.list_reward = []
+    self.hasTouched = False
+    self.hasBeenDetached = False
     # Configuration of the visualisation
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     # On saute les premières étapes
@@ -122,6 +124,7 @@ class KendamaEnv(gym.Env):
 
 
     self.time += 1
+    self.newPull = False
     # tension 
     if(self.pulling):
         force = p.getConstraintState(self.link)
@@ -143,12 +146,14 @@ class KendamaEnv(gym.Env):
     # What happens when there is no more tension
     if( self.pulling and tension > 0): #np.linalg.norm(vec)<0.5
         self.pulling = False
+        self.hasBeenDetached = True
         p.removeConstraint(self.link)
     
     # What happens when tension comes back
     elif(np.linalg.norm(vec) > 0.5 and not self.pulling):
         self.pulling = True
         self.pulling2 = True
+        self.newPull = True
         self.link = p.createConstraint(self.center, -1, self.dama, -1, p.JOINT_POINT2POINT,[1,1,1], vec/np.linalg.norm(vec)*0.5, np.array([-0.03,0,0]))
         p.changeConstraint(self.link,maxForce=100)
 
@@ -278,6 +283,8 @@ class KendamaEnv(gym.Env):
     self.vRad_dama = (0,0,0)
     self.vRad_ken = (0,0,0)
     self.wasHigher = False
+    self.hasTouched = False
+    self.hasBeenDetached = False
 
     return observation  # reward, done, info can't be included
   
@@ -310,7 +317,7 @@ class KendamaEnv(gym.Env):
     '''
     done = False
     reward = 0
-    rwdl = []
+
     # Je ne sais pas ce que cela fait...
     localOrientation = np.array([0,0,1])
     r = np.reshape(p.getMatrixFromQuaternion(p.getBasePositionAndOrientation(self.dama)[1]),[3,3])
@@ -318,18 +325,16 @@ class KendamaEnv(gym.Env):
 
     # Dama is under the ken
     if damaPos[2] < kenPos[2]:
-        reward += 0.1*min(damaPos[2], 1)
-        if(self.wasHigher):
-          self.killNextTime = True
-          return 3, False
+      if(self.wasHigher):
+        return 0, True
+      reward += 0.1*min(damaPos[2], 1)
+
 
     # Dama is above the ken
     else :
-      if(not self.wasHigher):
-        reward += 1.0
-      reward += 0.4
-      self.wasHigher = True
-      
+      self.wasHigher=True
+      if(len(p.getContactPoints(bodyA=self.ken, bodyB=self.dama)) > 0 ):
+        reward += 0.2
       
       #Reward sur la différence en position horizontale
       localOrientation = np.array([0,0,1])
@@ -337,8 +342,8 @@ class KendamaEnv(gym.Env):
       vect_ken_orientation = np.matmul(localOrientation, np.linalg.inv(r))
       spike_ken = vect_ken_orientation / np.linalg.norm(vect_ken_orientation) * 0.077 # Spike middle position
       
-      reward += 0.2 * np.exp(-15.0*np.linalg.norm(damaPos - kenPos + spike_ken)**2)
-      reward += 0.2 * np.exp(-500.0*np.linalg.norm(damaPos - kenPos + spike_ken)**2)
+      reward += 0.2 * np.exp(-15.0*np.linalg.norm(damaPos - kenPos - spike_ken)**2)
+      reward += 10 * np.exp(-500.0*np.linalg.norm(damaPos - kenPos - spike_ken)**2)
       
       #Reward sur la différence en orientation
       localOrientation = np.array([1,0,0])
@@ -349,23 +354,36 @@ class KendamaEnv(gym.Env):
       r = np.reshape(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(kenAngle)),[3,3])
       vect_ken_orientation = np.matmul(localOrientation, np.linalg.inv(r))
       
-      reward += 0.2 * np.exp(-10*(np.dot(vect_ken_orientation, vect_dama_orientation)+1)**2)
+      reward += 0.2 * np.exp(-7*(np.dot(vect_ken_orientation, vect_dama_orientation)+1)**2)
+      reward += 40 * np.exp(-20*(np.dot(vect_ken_orientation, vect_dama_orientation)+1)**2) *  np.exp(-100.0*np.linalg.norm(damaPos - kenPos - spike_ken)**2)
       #Reward sur l'anticolinéarité entre vecteur vitesse du dama et vecteur orientation du ken
       #rwdl.append(np.exp(-10*(np.dot(vect_ken_orientation, vect_dama_orientation)+1)**2))
       reward += 0.2*np.exp(-10*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2) # exp( - (u*v +1)**2 )
       #rwdl.append(np.exp(-10*(np.dot(vect_ken_orientation, damaVel/np.linalg.norm(damaVel))+1)**2))
     #Finally reward for staying around [0,0,1]
+
+
     reward += 0.3*np.exp(- 3.0* np.linalg.norm(kenPos - np.array(INITIAL_KEN_POS))**2)
     reward += 0.3*np.exp(- 3.0* np.linalg.norm(kenAngle - np.array(INITIAL_KEN_OR))**2)
+
+    reward += 0.3*np.exp(- 3.0* np.linalg.norm(damaPos[:2] - np.array(INITIAL_DAMA_POS[:2]))**2)
+    reward += 0.3*np.exp(- 3.0* np.linalg.norm(damaAngle - np.array(INITIAL_DAMA_OR))**2)
+    reward += 4*np.exp(- 10.0* np.linalg.norm(damaAngle - np.array(INITIAL_DAMA_OR))**2)
+
+    reward += 0.3*np.exp(- np.linalg.norm(damaVelRad)**2/(2*3.14*3.14))
+
+    
     #rwdl.append(0.3*np.exp(- 5.0* np.linalg.norm(kenPos - np.array([0,0,1]))**2))
 
     #Experimental : give reward when no tension in the string
-    if(not self.pulling and self.wasHigher):
-      reward *= 1.1
+    if(self.newPull and self.hasBeenDetached):
+      reward -= 100
 
+    if damaPos[2] < kenPos[2]:
+      reward /= 3
 
     if self.iscolliding(): # Condition sur la distance entre le centre du ken et le centre du dama : a determiner
-      reward = 10.0
+      reward = 5000.0
       done = False
       self.killNextTime = True
       print("IT'S A CATCH !")
@@ -373,10 +391,11 @@ class KendamaEnv(gym.Env):
     if self.out_of_box():
       self.killNextTime = True
       done = False
-      reward = -10
+      reward = -1000
 
     if self.out_of_time():
-      done = True
-      reward = 0
+      done = False
+      self.killNextTime = True
+      reward = -1000
     return reward, done
 
