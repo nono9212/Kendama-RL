@@ -40,6 +40,9 @@ class KendamaEnv(gym.Env):
     cubeStartOrientation = p.getQuaternionFromEuler(INITIAL_DAMA_OR)
     self.dama = p.loadURDF("./URDF/kendama_ball/kendama_ball.urdf",cubeStartPos, cubeStartOrientation, 
                     flags=p.URDF_USE_INERTIA_FROM_FILE)
+
+
+    p.changeDynamics(self.dama, -1, angularDamping=0.5)
     
     self.v_ken = (0,0,0) # to compute acceleration
     self.v_dama = (0,0,0) # to compute acceleration

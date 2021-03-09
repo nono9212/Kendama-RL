@@ -2,10 +2,11 @@
 <robot name="ballcustom3">
 
 <material name="silver">
-  <color rgba="0.700 0.700 0.700 1.000"/>
+  <color rgba="1.00 0.00 0.00 1.000"/>
 </material>
 
 <link name="base_link">
+
   <inertial>
     <origin rpy="0 0 0" xyz="-7.196908638935548e-05 -5.526794002960406e-18 -5.526794002960406e-18"/>
     <mass value="0.07415529686232127"/>

@@ -6,6 +6,7 @@
 </material>
 
 <link name="base_link">
+
   <inertial>
     <origin rpy="0 0 0" xyz="-0.00037189284550855024 4.342056230716583e-09 0.07388549981206773"/>
     <mass value="0.0388"/>
