@@ -5,7 +5,7 @@ import numpy as np
 import time
 from stable_baselines.common.policies import MlpPolicy
 from stable_baselines.sac.policies import MlpPolicy as MlpPolicySAC
-from stable_baselines.common.vec_env import SubprocVecEnv
+from stable_baselines.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines import PPO2,SAC
 from stable_baselines.common.vec_env import VecNormalize
 from IPython.display import clear_output
@@ -27,7 +27,7 @@ def make_env( rank, seed=0):
 
 if __name__ == '__main__':
     num_cpu = 8
-    env = SubprocVecEnv([make_env( i) for i in range(num_cpu)])
+    env = DummyVecEnv([lambda : KendamaEnv(render=False)])
     env = VecNormalize(env, norm_reward= False)
     
     
@@ -39,10 +39,10 @@ if __name__ == '__main__':
 
 
     #model.learn(total_timesteps=10000000)
-
-    model.learn(total_timesteps=20000000,tb_log_name="agent2", reset_num_timesteps=False)
+    while 1:
+   	 model.learn(total_timesteps=1000000,tb_log_name="agent2", reset_num_timesteps=False)
     
-    log_dir = "."
-    model.save( "sac")
-    stats_path = os.path.join(log_dir, "vec_normalize.pkl")
-    env.save(stats_path)
+   	 log_dir = "."
+   	 model.save( "sac")
+   	 stats_path = os.path.join(log_dir, "vec_normalize.pkl")
+   	 env.save(stats_path)

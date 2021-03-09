@@ -402,3 +402,23 @@ class KendamaEnv(gym.Env):
       reward = -1000
     return reward, done
 
+  def render(self, close=False):
+    RENDER_WIDTH=960
+    RENDER_HEIGHT= 480
+    view_matrix = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=[0,0,0.82],
+        distance=1.18,
+        yaw=40.2,
+        pitch=-25.6,
+        roll=0,
+        upAxisIndex=2)
+    proj_matrix = p.computeProjectionMatrixFOV(
+        fov=60, aspect=float(RENDER_WIDTH)/RENDER_HEIGHT,
+        nearVal=0.1, farVal=100.0)
+    (_, _, px, _, _) = p.getCameraImage(
+        width=RENDER_WIDTH, height=RENDER_HEIGHT, viewMatrix=view_matrix,
+        projectionMatrix=proj_matrix, renderer=p.ER_BULLET_HARDWARE_OPENGL)
+    rgb_array = np.array(px)
+    rgb_array = rgb_array[:, :, :3]
+    return rgb_array
+
